@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+namespace bloom {
 // We need to create multiple hashes for the same key
 // Use the std::hash to generate a seed for random number
 // generator.
@@ -22,8 +23,24 @@ auto hashGen(const T &key, std::size_t n) -> std::vector<std::size_t> {
   return hashes;
 }
 
+// Header to serialize/deserialize the Bloom filter to disk
+struct header {
+  uint8_t magic[4] = {'C', 'C', 'B', 'F'}; // CCBF
+  uint8_t version[2] = {0x0, 0x1};
+  uint16_t n_hashfns;   // NUmber of hash functions
+  uint64_t bitset_size; // Number of bits used in filter
+  header() = default;
+  header(size_t k, size_t m)
+      : n_hashfns{static_cast<uint16_t>(k)}, bitset_size{m} {}
+  void print() {
+    std::cout << "Magic: " << magic[0] << magic[1] << magic[2] << magic[3]
+              << "\t"
+              << " n_hashfns: " << n_hashfns << " bitset_size: " << bitset_size
+              << std::endl;
+  }
+};
 
-// Supply the number of items and positivity rate to create a Bloom 
+// Supply the number of items and positivity rate to create a Bloom
 // filter
 class Bloom {
 public:
@@ -59,7 +76,7 @@ public:
     }
     std::string key;
     while (data >> key) {
-      auto hashes = hashGen<std::string>(key, k_);
+      auto hashes = bloom::hashGen<std::string>(key, k_);
       count++;
       for (auto h : hashes) {
         bitset_.at(h % m_) = true;
@@ -70,7 +87,7 @@ public:
 
   // Query individual words for presence in dictionary
   bool query(std::string key) {
-    auto hashes = hashGen<std::string>(key, k_);
+    auto hashes = bloom::hashGen<std::string>(key, k_);
     auto ret = true;
     for (auto h : hashes) {
       if (bitset_.at(h % m_) == false) {
@@ -80,23 +97,6 @@ public:
     }
     return ret;
   }
-
-  // Header to serialize/deserialize the Bloom filter to disk
-  struct header {
-    uint8_t magic[4] = {'C', 'C', 'B', 'F'}; // CCBF
-    uint8_t version[2] = {0x0, 0x1};
-    uint16_t n_hashfns;   // NUmber of hash functions
-    uint64_t bitset_size; // Number of bits used in filter
-    header() = default;
-    header(size_t k, size_t m)
-        : n_hashfns{static_cast<uint16_t>(k)}, bitset_size{m} {}
-    void print() {
-      std::cout << "Magic: " << magic[0] << magic[1] << magic[2] << magic[3]
-                << "\t"
-                << " n_hashfns: " << n_hashfns
-                << " bitset_size: " << bitset_size << std::endl;
-    }
-  };
 
   // Serialize the Bloom filter to disk
   bool serialize(std::string diskfile) {
@@ -163,23 +163,28 @@ private:
   size_t k_{0}; // Number of hash functions
   std::vector<bool> bitset_{0};
 };
+} // namespace bloom
 
 int main() {
   // Lets create a bloom filter with 0.01% false positives
   // On mac os dict.txt has 235976 words
-  Bloom bf(235976, 0.01);
+  bloom::Bloom bf(466550, 0.01);
   // Read the dict.txt and create bloom filter
-  bf.insert("dict.txt");
+  auto num_entries = bf.insert("words.txt");
+  std::cout << "Inserted " << num_entries << " words" << std::endl;
   // Serialize the bloom filter to disk
   bf.serialize("words.bf");
   // Deserialize the filter and verify that bitsets match
   bf.deserialize("words.bf");
   // Run some tests
-  assert(bf.query("coding") == false);
-  assert(bf.query("word") == true);
+  assert(bf.query("coder") == true);
+  assert(bf.query("word") == false);
+  assert(bf.query("word-beat") == true);
   assert(bf.query("Aaronical") == true);
   assert(bf.query("Zyryan") == true);
   assert(bf.query("Zyryen") == false);
   assert(bf.query("concurrency") == true);
+  assert(bf.query("Trans-danubian") == true);
+  assert(bf.query("Trans-vol") == false);
   return 0;
 }

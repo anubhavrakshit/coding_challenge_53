@@ -9,6 +9,11 @@
 #include <string>
 #include <vector>
 
+// We need to create multiple hashes for the same key
+// Use the std::hash to generate a seed for random number
+// generator.
+// Keep calling the generator to produce the required number of
+// hashes
 template <typename T>
 auto hashGen(const T &key, std::size_t n) -> std::vector<std::size_t> {
   std::default_random_engine e1(std::hash<T>{}(key));
@@ -17,6 +22,9 @@ auto hashGen(const T &key, std::size_t n) -> std::vector<std::size_t> {
   return hashes;
 }
 
+
+// Supply the number of items and positivity rate to create a Bloom 
+// filter
 class Bloom {
 public:
   Bloom() = delete;
@@ -41,6 +49,8 @@ public:
     bitset_.resize(m_);
     std::fill(bitset_.begin(), bitset_.end(), false);
   }
+
+  // Insert a Dictionary to the bloom filter
   size_t insert(std::string dict) {
     std::ifstream data(dict);
     size_t count{0};
@@ -58,6 +68,7 @@ public:
     return count;
   }
 
+  // Query individual words for presence in dictionary
   bool query(std::string key) {
     auto hashes = hashGen<std::string>(key, k_);
     auto ret = true;
@@ -70,6 +81,7 @@ public:
     return ret;
   }
 
+  // Header to serialize/deserialize the Bloom filter to disk
   struct header {
     uint8_t magic[4] = {'C', 'C', 'B', 'F'}; // CCBF
     uint8_t version[2] = {0x0, 0x1};
@@ -86,6 +98,7 @@ public:
     }
   };
 
+  // Serialize the Bloom filter to disk
   bool serialize(std::string diskfile) {
     std::ofstream serialized_data(diskfile, std::ios::binary);
     if (!serialized_data.is_open()) {
@@ -98,6 +111,9 @@ public:
     for (size_t i = 0; i < bitset_.size(); i += 8) {
       char byte{0};
       size_t pos{0};
+      // The minimum granularity to write to disk is 1 byte
+      // So we will aggregate bits to a byte and then write
+      // to the file stream
       for (auto j = i; j < i + 8 and j < bitset_.size(); j++) {
         if (bitset_[j]) {
           byte |= (0x1 << pos);
@@ -109,6 +125,7 @@ public:
     return true;
   }
 
+  // Deserialize the Bloom filter from disk
   std::vector<bool> deserialize(std::string diskfile) {
     std::vector<bool> des_bitset;
     std::ifstream deserialize_data(diskfile, std::ios::binary);
